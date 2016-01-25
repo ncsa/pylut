@@ -1,0 +1,14 @@
+import fsitem
+import timeit
+
+for fn in ( 
+    '/home/aloftus/junk',
+    '/home/aloftus/psync_var_log/psync.1446723698.logs.01.gz',
+    '/home/aloftus/psync_var_log/1447906502.psync_u.INFO.gz',
+    '/home/aloftus/psync_var_log/psync.20151103T163234.ERROR',
+):
+    a = fsitem.FSItem( fn )
+    s = a.size / 1024.0 / 1024.0 / 1024.0
+    print( "Avg time to checksum filesize {0:4.2f}GiB".format( s ) )
+    e = timeit.timeit( a.checksum, number=1 )
+    print( e )
