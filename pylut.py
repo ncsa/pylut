@@ -10,7 +10,7 @@ log = logging.getLogger( __name__ )
 
 # Look for custom variables from environment
 env = {}
-for k in [ 'PYLUTRSYNCPATH', 'PYLUTLFSPATH', 'PYLUTMAXRSYNCSIZE' ]
+for k in [ 'PYLUTRSYNCPATH', 'PYLUTLFSPATH', 'PYLUTRSYNCMAXSIZE' ]:
     env[ k ] = os.environ[ k ]
         
 
@@ -428,7 +428,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
         except ( Run_Cmd_Error ) as e:
             msg = 'Setstripe failed for {0}'.format( setstripe_tgt )
             raise SyncError( msg, e )
-        if rsync_src.size > env[ 'PYLUTMAXRSYNCSIZE' ]:
+        if rsync_src.size > env[ 'PYLUTRSYNCMAXSIZE' ]:
             # DD for large files
             # TODO - replace dd with ddrescue (for efficient handling of sparse files)
             cmd = [ '/bin/dd' ]
