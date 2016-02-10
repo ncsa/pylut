@@ -59,19 +59,15 @@ class LustreStripeInfo( object ):
         retval = None
         log.debug( 'got lines {0}'.format( lines ) )
         if lines[0].startswith( 'stripe_count:' ):
-#            log.debug( 'this is a directory' )
             # this is output from a directory
             parts = lines[0].split()
-#            log.debug( 'parts = {0}'.format( parts ) )
             retval = cls( count=parts[1], size=parts[3], offset=parts[5] )
-#            log.debug( 'about to return {0}'.format( retval ) )
         elif len( lines ) < 8:
             raise LustreStripeInfoError( 
                 reason='too few input lines, expected 8 or more',
                 origin=pprint.pformat( lines )
                 )
         else:
-#            log.debug( 'this is a file' )
             # this is a normal file
             found_objidx = False
             info = {}
@@ -105,9 +101,9 @@ class LustreStripeInfo( object ):
             retval = cls.from_dict( info )
         return retval
 
-# lfs getstripe -d /u/staff/aloftus
+# $> lfs getstripe -d /u/staff/aloftus
 # stripe_count:   1 stripe_size:    1048576 stripe_offset:  -1
-# lfs getstripe /u/staff/aloftus/junk
+# $> lfs getstripe /u/staff/aloftus/junk
 # /u/staff/aloftus/junk
 # lmm_stripe_count:   1
 # lmm_stripe_size:    1048576
