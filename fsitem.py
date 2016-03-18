@@ -26,28 +26,34 @@ class FSItem( object ):
         self.name = os.path.basename( path )
         self.absname = absname
         self.mountpoint = mountpoint
+        self._inode      = None     #filesystem specific (Lustre==FID)
         self._statinfo   = None     #os.lstat
         self._stripeinfo = None     #pylut.getstripeinfo
-        self._fid        = None     #pylut.path2fid
         self._checksum   = None     #hashlib.md5().hexdigest
         if self.absname is None:
             self.absname = os.path.abspath( path )
         if self.mountpoint is None:
             self.mountpoint = getmountpoint( self.absname )
+        self.parent = os.path.dirname( self.absname )
+        if self.absname == self.mountpoint:
+            self.parent = ''
+        elif self.absname == self.parent:
+            self.parent = ''
 
 
     def __repr__( self ):
-        return '<{0} {1} {2}>'.format( self.__class__.__name__, self._fid, self.absname )
+        return '<{0} {1} {2}>'.format( self.__class__.__name__, self._inode, self.absname )
 
 
     def __str__( self ):
         return self.absname
 
 
-    def fid( self ):
-        if self._fid is None:
-            self._fid = pylut.path2fid( self.absname )
-        return self._fid
+    def inode( self ):
+        #TODO-call inode() method of appropriate module for type of filesystem
+        if self._inode is None:
+            self._inode = pylut.inode( self.absname )
+        return self._inode
 
 
     def stat( self ):
@@ -64,6 +70,7 @@ class FSItem( object ):
         return self._statinfo
 
 
+    #TODO-this should not be here, or at least needs to be monkeypatched in only when running on a filesystem that supports it (such as Lustre)
     def stripeinfo( self ):
         """
         Return stripe information, getting it if needed
@@ -76,11 +83,14 @@ class FSItem( object ):
     def checksum( self ):
         if self._checksum is None:
             if self.exists():
-                cksum = hashlib.md5()
-                with open( self.absname, 'rb' ) as f:
-                    for chunk in iter( lambda: f.read( self.md5_blocksize ), b'' ):
-                        cksum.update( chunk )
-                self._checksum = cksum.hexdigest()
+                if self.is_regular():
+                    cksum = hashlib.md5()
+                    with open( self.absname, 'rb' ) as f:
+                        for chunk in iter( lambda: f.read( self.md5_blocksize ), b'' ):
+                            cksum.update( chunk )
+                    self._checksum = cksum.hexdigest()
+                else:
+                    self._checksum = '0'*32
         return self._checksum
             
 
@@ -96,16 +106,46 @@ class FSItem( object ):
             
 
     def is_dir( self ):
+        """ Returns True if entry is a directory, False otherwise
+        """
         return stat.S_ISDIR( self.mode )
 
 
     def is_file( self ):
-        return stat.S_ISREG( self.mode )
+        """ Return True if entry is any non-device file type
+            (regular file, symlink, fifo or socket); False otherwise
+        """
+        return stat.S_ISREG( self.mode ) or \
+               stat.S_ISLNK( self.mode ) or \
+               stat.S_ISFIFO( self.mode ) or \
+               stat.S_ISSOCK( self.mode )
+
+
+    def is_device( self ):
+        """ Return True if entry is a CHR or BLK device file
+        """
+        return stat.S_ISCHR( self.mode ) or \
+               stat.S_ISBLK( self.mode )
 
 
     def is_symlink( self ):
+        """ Return True if entry is a symbolic link
+        """
         return stat.S_ISLNK( self.mode )
 
+
+    def is_regular( self ):
+        """ Return True if entry is a regular file; False otherwise
+        """
+        return stat.S_ISREG( self.mode )
+
+
+    def is_special( self ):
+        """ Return True if entry is a fifo or socket or device; False otherwise
+        """
+        return stat.S_ISFIFO( self.mode ) or \
+               stat.S_ISSOCK( self.mode )
+        
 
     def compare( self, other, attrnames ):
         """ Compare (one or more) attributes (given by attrnames)
@@ -116,13 +156,12 @@ class FSItem( object ):
 
 
     def update( self ):
-        """
-            Force update of all transient information 
-            (stripeinfo, statinfo, fid, checksum)
+        """ Force update of all transient information 
+            (stripeinfo, statinfo, inode, checksum)
         """
         self._statinfo = None
         self._stripeinfo = None
-        self._fid = None
+        self._inode = None
         self._checksum = None
 
 

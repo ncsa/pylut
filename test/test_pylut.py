@@ -1,6 +1,8 @@
 #!/bin/env python
 # vim:fileencoding=utf8
 
+#TODO-add fifos and sockets to Test_Pylut.setup()
+
 import unittest
 import logging
 import os
@@ -15,7 +17,8 @@ from runcmd import runcmd, Run_Cmd_Error
 
 
 class Test_Pylut( unittest.TestCase ):
-    testbases = { '/mnt/a': 'settools/test/pylut_test',
+#    testbases = { '/mnt/a': 'settools/test/pylut_test',
+    testbases = { 
                   '/mnt/b': 'projects/test/pylut_test',
                   '/mnt/c': 'scratch/test/pylut_test',
                 }
@@ -540,7 +543,7 @@ class Test_Pylut( unittest.TestCase ):
             # make initial sync so tgt exists
             pylut.syncfile( src, tgt, **syncopts )
             # save tgt FID
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             tgt.update()
             # sync again, should be very fast because only have to hardlink tmp
             syncopts.update( keeptmp=True )
@@ -553,7 +556,7 @@ class Test_Pylut( unittest.TestCase ):
             # verify tmp and tgt are same file
             self._assert_files_equal( tgt, tmp )
             # verify tgt has same FID as before
-            self.assertEqual( tgt_fid_1, tgt.fid() )
+            self.assertEqual( tgt_fid_1, tgt.inode() )
 
 
     @unittest.skip( 'skipped as redundant' )
@@ -576,7 +579,7 @@ class Test_Pylut( unittest.TestCase ):
             tgt.update()
             # verify tgt differs from src
             # save tgt FID
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             # syncfile should delete old tgt and make a new one
             syncopts.update( keeptmp=True )
             tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
@@ -584,7 +587,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tgt has different FID
-            self.assertNotEqual( tgt_fid_1, tgt.fid() )
+            self.assertNotEqual( tgt_fid_1, tgt.inode() )
 
 
     def test_syncfile_08( self ):
@@ -604,7 +607,7 @@ class Test_Pylut( unittest.TestCase ):
             # verify tmp doesn't exist
             self.assertFalse( os.path.exists( str( tmp ) ) )
             # save tgt FID
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             tgt.update()
             # sync again, should be very fast because nothing to do (keeptmp=False)
             starttime = time.time()
@@ -618,7 +621,7 @@ class Test_Pylut( unittest.TestCase ):
             # verify tmp does not exist
             self.assertFalse( os.path.exists( str( tmp ) ) )
             # verify tgt has same FID as before
-            self.assertEqual( tgt_fid_1, tgt.fid() )
+            self.assertEqual( tgt_fid_1, tgt.inode() )
 
 
     def test_syncfile_09( self ):
@@ -638,14 +641,14 @@ class Test_Pylut( unittest.TestCase ):
             # change tgt file with random data
             self.mkfile( tgt )
             # save tgt FID
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             tgt.update()
             # syncfile should delete old tgt and make a new one
             tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
             # the usual checks
             self._assert_files_match( src, tgt, syncopts )
             # check tgt has different FID
-            self.assertNotEqual( tgt_fid_1, tgt.fid() )
+            self.assertNotEqual( tgt_fid_1, tgt.inode() )
             # verify tmp does not exist
             self.assertFalse( os.path.exists( str( tmp ) ) )
 
@@ -670,7 +673,7 @@ class Test_Pylut( unittest.TestCase ):
             self.assertFalse( os.path.exists( str( tgt ) ) )
             tgt.update()
             # save tmp FID
-            tmp_fid_1 = tmp.fid()
+            tmp_fid_1 = tmp.inode()
             # sync again, should be very fast because only have to hardlink tgt
             starttime = time.time()
             tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
@@ -682,7 +685,7 @@ class Test_Pylut( unittest.TestCase ):
             elapsedtime = endtime - starttime
             self.assertLess( elapsedtime, 1 )
             # verify tmp has same FID as before
-            self.assertEqual( tmp_fid_1, tmp.fid() )
+            self.assertEqual( tmp_fid_1, tmp.inode() )
 
 
     def test_syncfile_10( self ):
@@ -705,7 +708,7 @@ class Test_Pylut( unittest.TestCase ):
             tgt.update()
             self.assertFalse( os.path.exists( str( tgt ) ) )
             # save tmp FID
-            tmp_fid_1 = tmp.fid()
+            tmp_fid_1 = tmp.inode()
             # sync again, should be very fast because only have to hardlink tgt
             syncopts.update( keeptmp=False )
             starttime = time.time()
@@ -719,7 +722,7 @@ class Test_Pylut( unittest.TestCase ):
             # verify tmp doesn't exist
             self.assertFalse( os.path.exists( str( tmp ) ) )
             # verify tgt_FID matches old tmp FID
-            self.assertEqual( tgt.fid(), tmp_fid_1 )
+            self.assertEqual( tgt.inode(), tmp_fid_1 )
 
 
     def test_syncfile_07( self ):
@@ -738,7 +741,7 @@ class Test_Pylut( unittest.TestCase ):
             # do initial sync to get tmppath
             tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
             # save tmp FID
-            tmp_fid_1 = tmp.fid()
+            tmp_fid_1 = tmp.inode()
             # remove tgt file
             os.unlink( str( tgt ) )
             self.assertFalse( os.path.exists( str( tgt ) ) )
@@ -751,7 +754,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tmp has different FID
-            self.assertNotEqual( tmp_fid_1, tmp.fid() )
+            self.assertNotEqual( tmp_fid_1, tmp.inode() )
 
 
     def test_syncfile_11( self ):
@@ -770,7 +773,7 @@ class Test_Pylut( unittest.TestCase ):
             # do initial sync to create tmp
             tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
             # save tmp FID
-            tmp_fid_1 = tmp.fid()
+            tmp_fid_1 = tmp.inode()
             # remove tgt file
             os.unlink( str( tgt ) )
             tgt.update()
@@ -783,7 +786,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self.assertFalse( os.path.exists( str( tmp ) ) )
             # check tgt has different FID than old tmp
-            self.assertNotEqual( tmp_fid_1, tgt.fid() )
+            self.assertNotEqual( tmp_fid_1, tgt.inode() )
 
     def test_syncfile_12( self ):
         """
@@ -836,7 +839,7 @@ class Test_Pylut( unittest.TestCase ):
             # initial sync to create tgt
             pylut.syncfile( src, tgt, **syncopts )
             # track old tgt fid
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             # ensure tgt_mtime < src_mtime
             new_mtime = src.mtime - random.randint( 1, 10 )
             self.touch( tgt, ( new_mtime, new_mtime ) )
@@ -848,7 +851,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # Check tgt has a new FID
-            self.assertNotEqual( tgt_fid_1, tgt.fid() )
+            self.assertNotEqual( tgt_fid_1, tgt.inode() )
 
 
     def test_syncfile_14( self ):
@@ -868,7 +871,7 @@ class Test_Pylut( unittest.TestCase ):
             # initial sync to create tgt
             pylut.syncfile( src, tgt, **syncopts )
             # track old tgt fid
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             # ensure tgt mtime > src mtime
             new_mtime = src.mtime + random.randint( 1, 10 )
             self.touch( tgt, ( new_mtime, new_mtime ) )
@@ -880,7 +883,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # Check tgt has a new FID
-            self.assertNotEqual( tgt_fid_1, tgt.fid() )
+            self.assertNotEqual( tgt_fid_1, tgt.inode() )
 
 
     def test_syncfile_15( self ):
@@ -900,7 +903,7 @@ class Test_Pylut( unittest.TestCase ):
             # initial sync to create tgt
             pylut.syncfile( src, tgt, **syncopts )
             # get existing tgt fid
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             # ensure tgt_mtime < src_mtime
             new_mtime = src.mtime - random.randint( 1, 10 )
             self.touch( tgt, ( new_mtime, new_mtime ) )
@@ -912,7 +915,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp)
             # check tgt has a new FID
-            self.assertNotEqual( tgt_fid_1, tgt.fid() )
+            self.assertNotEqual( tgt_fid_1, tgt.inode() )
 
 
     def test_syncfile_16( self ):
@@ -933,7 +936,7 @@ class Test_Pylut( unittest.TestCase ):
             # initial sync to create tgt
             pylut.syncfile( src, tgt, **syncopts )
             # get tgt FID
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             tgt.update()
             # sync with pre_checksums enabled
             syncopts.update( keeptmp=True, pre_checksums=True )
@@ -942,7 +945,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # Check tgt FID has not changed
-            self.assertEqual( tgt_fid_1, tgt.fid() )
+            self.assertEqual( tgt_fid_1, tgt.inode() )
 
 
     def test_syncfile_17( self ):
@@ -969,7 +972,7 @@ class Test_Pylut( unittest.TestCase ):
             self.touch( tgt, time_tuple )
             # get tgt FID
             tgt.update()
-            tgt_fid_1 = tgt.fid()
+            tgt_fid_1 = tgt.inode()
             # Verify checksums differ
             self.assertNotEqual( tgt.checksum(), src.checksum() )
             # sync with pre_checksums enabled
@@ -979,7 +982,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # Check for new tgt FID
-            self.assertNotEqual( tgt_fid_1, tgt.fid() )
+            self.assertNotEqual( tgt_fid_1, tgt.inode() )
 
 
     def test_syncfile_18( self ):
@@ -1009,7 +1012,7 @@ class Test_Pylut( unittest.TestCase ):
             self.touch( tmp, time_tuple )
             tmp.update()
             # get tmp FID
-            old_fid = tmp.fid()
+            old_fid = tmp.inode()
             # Verify checksums differ
             self.assertNotEqual( tmp.checksum(), src.checksum() )
             # sync with pre_checksums enabled
@@ -1019,7 +1022,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # Check for new tgt FID
-            self.assertNotEqual( old_fid, tmp.fid() )
+            self.assertNotEqual( old_fid, tmp.inode() )
 
 
     def test_syncfile_19( self ):
@@ -1046,7 +1049,7 @@ class Test_Pylut( unittest.TestCase ):
             self.assertNotEqual( tgt.size, src.size )
             self.assertEqual( tgt.mtime, src.mtime )
             # save tgt FID
-            old_fid = tgt.fid()
+            old_fid = tgt.inode()
             # sync again
             syncopts.update( keeptmp=True )
             tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
@@ -1054,7 +1057,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tgt has a new FID
-            self.assertNotEqual( old_fid, tgt.fid() )
+            self.assertNotEqual( old_fid, tgt.inode() )
 
 
     def test_syncfile_20( self ):
@@ -1081,14 +1084,14 @@ class Test_Pylut( unittest.TestCase ):
             self.assertNotEqual( tmp.size, src.size )
             self.assertEqual( tmp.mtime, src.mtime )
             # save tmp FID
-            old_fid = tmp.fid()
+            old_fid = tmp.inode()
             # sync again
             tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
             # the usual checks
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tmp has a new FID
-            self.assertNotEqual( old_fid, tmp.fid() )
+            self.assertNotEqual( old_fid, tmp.inode() )
 
 
     def test_syncfile_21( self ):
@@ -1111,7 +1114,7 @@ class Test_Pylut( unittest.TestCase ):
             tgt.update()
             self.assertNotEqual( tgt.mode, src.mode )
             # save tgt FID
-            old_fid = tgt.fid()
+            old_fid = tgt.inode()
             # sync again, should be very fast because only have to update metadata
             syncopts.update( keeptmp=True )
             starttime = time.time()
@@ -1123,7 +1126,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tgt has the same FID
-            self.assertEqual( old_fid, tgt.fid() )
+            self.assertEqual( old_fid, tgt.inode() )
 
 
     def test_syncfile_22( self ):
@@ -1146,7 +1149,7 @@ class Test_Pylut( unittest.TestCase ):
             tmp.update()
             self.assertNotEqual( tmp.mode, src.mode )
             # save tmp FID
-            old_fid = tgt.fid()
+            old_fid = tgt.inode()
             tgt.update()
             # delete tgt
             os.unlink( str( tgt ) )
@@ -1160,7 +1163,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tmp has the same FID
-            self.assertEqual( old_fid, tmp.fid() )
+            self.assertEqual( old_fid, tmp.inode() )
 
 
     def test_syncfile_23( self ):
@@ -1184,7 +1187,7 @@ class Test_Pylut( unittest.TestCase ):
             self.assertNotEqual( tgt.uid, src.uid )
             self.assertEqual( tgt.gid, src.gid )
             # save tgt FID
-            old_fid = tgt.fid()
+            old_fid = tgt.inode()
             # sync again, should be very fast because only have to update metadata
             syncopts.update( keeptmp=True )
             starttime = time.time()
@@ -1196,7 +1199,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tgt has the same FID
-            self.assertEqual( old_fid, tgt.fid() )
+            self.assertEqual( old_fid, tgt.inode() )
 
 
     def test_syncfile_24( self ):
@@ -1220,7 +1223,7 @@ class Test_Pylut( unittest.TestCase ):
             self.assertNotEqual( tmp.uid, src.uid )
             self.assertEqual( tmp.gid, src.gid )
             # save tmp FID
-            old_fid = tmp.fid()
+            old_fid = tmp.inode()
             # delete tgt
             os.unlink( str( tgt ) )
             tgt.update()
@@ -1234,7 +1237,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tmp has the same FID
-            self.assertEqual( old_fid, tmp.fid() )
+            self.assertEqual( old_fid, tmp.inode() )
 
 
     def test_syncfile_25( self ):
@@ -1258,7 +1261,7 @@ class Test_Pylut( unittest.TestCase ):
             self.assertEqual( tgt.uid, src.uid )
             self.assertNotEqual( tgt.gid, src.gid )
             # save tgt FID
-            old_fid = tgt.fid()
+            old_fid = tgt.inode()
             # sync again, should be very fast because only have to update metadata
             syncopts.update( keeptmp=True )
             starttime = time.time()
@@ -1270,7 +1273,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tgt has the same FID
-            self.assertEqual( old_fid, tgt.fid() )
+            self.assertEqual( old_fid, tgt.inode() )
 
 
     def test_syncfile_26( self ):
@@ -1294,7 +1297,7 @@ class Test_Pylut( unittest.TestCase ):
             self.assertEqual( tmp.uid, src.uid )
             self.assertNotEqual( tmp.gid, src.gid )
             # save tmp FID
-            old_fid = tmp.fid()
+            old_fid = tmp.inode()
             # delete tgt
             os.unlink( str( tgt ) )
             tgt.update()
@@ -1308,7 +1311,7 @@ class Test_Pylut( unittest.TestCase ):
             self._assert_files_match( src, tgt, syncopts )
             self._assert_files_equal( tgt, tmp )
             # check tmp has the same FID
-            self.assertEqual( old_fid, tmp.fid() )
+            self.assertEqual( old_fid, tmp.inode() )
 
 
     def _assert_files_match( self, f1, f2, incoming_syncopts ):
@@ -1364,7 +1367,7 @@ class Test_Pylut( unittest.TestCase ):
         f1.update()
         f2.update()
         failmsg = 'f1: {0} f2: {1}'.format( f1, f2 )
-        self.assertEqual( f1.fid(), f2.fid(), msg=failmsg )
+        self.assertEqual( f1.inode(), f2.inode(), msg=failmsg )
 
 
     def test_showvars( self ):
@@ -1394,7 +1397,7 @@ if __name__ == "__main__":
     # test_syncfile_07
 
     test_list = [
-        'test_syncfile_22',
+        'test_syncfile_09',
         ]
     suite = unittest.TestSuite( map( Test_Pylut, test_list ) )
 

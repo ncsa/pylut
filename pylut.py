@@ -135,7 +135,7 @@ class LustreStripeInfo( object ):
             self.count, self.size, self.offset )
 
 
-def path2fid ( path ):
+def path2fid( path ):
     """
     get fid for a single path
     return FID as string
@@ -147,6 +147,8 @@ def path2fid ( path ):
     ( output, errput ) = runcmd( cmd, opts, args )
     retval = output.rstrip()
     return retval
+
+inode = path2fid
 
 
 def fid2path( fsname, fid ):
@@ -251,9 +253,9 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
         #     fsitem.getmountpoint( tgt_path ), 
         #     '.pylutsyncfiletmpbase' )
         raise UserWarning( 'Default tmpbase not yet implemented' )
-    # Construct full path to tmpfile: base + <5-char hex value> + <FID>
+    # Construct full path to tmpfile: base + <5-char hex value> + <INODE>
     try:
-        srcfid = src_path.fid()
+        srcfid = src_path.ino
     except ( Run_Cmd_Error ) as e:
         raise SyncError( reason=e.reason, origin=e )
     tmpdir = _pathjoin( tmpbase, hex( hash( srcfid ) )[-5:] )
@@ -294,7 +296,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
             src_path, tgt_path, syncopts )
     if tmp_exists and tgt_exists:
         log.debug( 'tmp and tgt exist' )
-        tgt_tmp_are_same_file = tmp_path.fid() == tgt_path.fid()
+        tgt_tmp_are_same_file = tmp_path.ino == tgt_path.ino
         if tgt_tmp_are_same_file:
             log.debug( 'tmp and tgt are same file' )
             if tmp_data_ok:
@@ -380,11 +382,12 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
         log.debug( 'neither tmp nor tgt exist' )
         attrs_affected = Attr_Matches( True, True, True, 
             synctimes, syncowner, syncgroup, syncperms )
-        if keeptmp:
-            do_mktmpdir = True
+        if src_path.is_regular():
             do_setstripe = True
             setstripe_stripeinfo = src_path.stripeinfo()
-            setstripe_tgt = tmp_path
+        if keeptmp:
+            do_mktmpdir = True
+            setstripe_tgt = tmp_path #will be ignored if do_setstripe is False
             do_rsync = True
             rsync_src = src_path
             rsync_tgt = tmp_path
@@ -394,9 +397,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
             do_checksums = True
         else:
             log.debug( 'keeptmp is false, skipping tmpfile creation' )
-            do_setstripe = True
-            setstripe_stripeinfo = src_path.stripeinfo()
-            setstripe_tgt = tgt_path
+            setstripe_tgt = tgt_path #will be ignored if do_setstripe is False
             do_rsync = True
             rsync_src = src_path
             rsync_tgt = tgt_path
@@ -445,7 +446,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
         # Do the rsync
         cmd = [ env[ 'PYLUTRSYNCPATH' ] ]
         opts = { '--compress-level': 0 }
-        args = [ '-X', '-A', '--super', '--inplace' ]
+        args = [ '-l', '-A', '-X', '--super', '--inplace', '--special' ]
         if synctimes:
             args.append( '-t' )
         if syncperms:
@@ -524,7 +525,6 @@ def syncdir( src_path, tgt_path,
     cmd = [ env[ 'PYLUTRSYNCPATH' ] ]
     opts = None
     # strip leaf name from tgtdir to ensure rsync does the right thing
-    tgt_parent = fsitem.FSItem( os.path.dirname( str( tgt_path ) ) )
     args = [ '-X', '-A', '--super', '-d' ]
     if synctimes:
         args.append( '-t' )
@@ -535,7 +535,7 @@ def syncdir( src_path, tgt_path,
     if syncgroup:
         args.append( '-g' )
     args.append( src_path )
-    args.append( "{0}{1}".format( str( tgt_parent ), os.sep ) )
+    args.append( "{0}{1}".format( str( tgt_path.parent ), os.sep ) )
     return runcmd( cmd, opts, args )
 
 
@@ -590,16 +590,6 @@ def _compare_files( file1, file2, syncopts ):
             if file1.checksum() != file2.checksum():
                 data_ok = False
                 log.debug( 'Checksum mismatch' )
-#    meta_ok = True
-#    if syncopts[ 'syncowner' ]:
-#        if not matches[4]:
-#            meta_ok = False
-#    if syncopts[ 'syncgroup' ]:
-#        if not matches[5]:
-#            meta_ok = False
-#    if syncopts[ 'syncperms' ]:
-#        if not matches[6]:
-#            meta_ok = False
     return ( data_ok, meta_ok, attrs_affected )
 
 
