@@ -1,0 +1,13 @@
+#!/bin/sh -e
+
+PWD=$( pwd )
+OldPythonPath=$( echo $PYTHONPATH )
+export PYTHONPATH="${PWD}"
+
+export PYLUTRSYNCPATH=/usr/bin/rsync
+export PYLUTLFSPATH=/usr/bin/lfs
+export PYLUTRSYNCMAXSIZE=536870912
+
+py.test $*
+
+export PYTHONPATH="$OldPythonPath"

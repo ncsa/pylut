@@ -1,8 +1,0 @@
-#!/bin/sh -e
-
-source ~aloftus/venv/psync_ie/bin/activate
-source ~aloftus/psync/config/bashrc_ie
-
-python test/test_pylut.py
-
-deactivate

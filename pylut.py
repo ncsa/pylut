@@ -16,6 +16,7 @@ for k in [ 'PYLUTRSYNCPATH', 'PYLUTLFSPATH', 'PYLUTRSYNCMAXSIZE' ]:
 
 # Encapsulation objects, for function return values
 #               0       1              2             3        4      5      6
+#TODO - replace mtime with ctime
 attr_order = ( 'size', 'stripecount', 'stripesize', 'mtime', 'uid', 'gid', 'mode', )
 Attr_Matches = collections.namedtuple( 'Attr_Matches', attr_order )
 
@@ -33,9 +34,9 @@ class LustreStripeInfo( object ):
     index_group = 2
 
     def __init__( self, **kwargs ):
-        self.count = 0
-        self.size = 0
-        self.offset = -1
+        self.count = None
+        self.size = None
+        self.offset = None
         self.pattern = None
         self.gen = None
         self.index_info = None
@@ -58,8 +59,9 @@ class LustreStripeInfo( object ):
         """
         retval = None
         log.debug( 'got lines {0}'.format( lines ) )
+        del lines[0] #first line is a repeat of the filename
         if lines[0].startswith( 'stripe_count:' ):
-            # this is output from a directory
+            log.debug( 'this is a directory' )
             parts = lines[0].split()
             retval = cls( count=parts[1], size=parts[3], offset=parts[5] )
         elif len( lines ) < 8:
@@ -68,10 +70,9 @@ class LustreStripeInfo( object ):
                 origin=pprint.pformat( lines )
                 )
         else:
-            # this is a normal file
+            log.debug( 'this is a file' )
             found_objidx = False
             info = {}
-            del lines[0] #first line is a repeat of the filename
             if len( lines[-1] ) < 1: #remove empty last line
                 del lines[-1]
             for line in lines:
@@ -99,14 +100,15 @@ class LustreStripeInfo( object ):
                     info[ 'index_info' ].append( 
                         tuple( int( parts[i] ) for i in ( 0, 1, 3 ) ) )
             retval = cls.from_dict( info )
+        log.debug( 'count={0} size={1} offset={2}'.format(
+            retval.count, retval.size, retval.offset ) )
         return retval
 
 # $> lfs getstripe -d /u/staff/aloftus
 # stripe_count:   1 stripe_size:    1048576 stripe_offset:  -1
 # $> lfs getstripe /u/staff/aloftus/junk
 # /u/staff/aloftus/junk
-# lmm_stripe_count:   1
-# lmm_stripe_size:    1048576
+# lmm_stripe_count:   1 # lmm_stripe_size:    1048576
 # lmm_pattern:        1
 # lmm_layout_gen:     0
 # lmm_stripe_offset:  106
@@ -164,25 +166,37 @@ def fid2path( fsname, fid ):
     return paths
 
 
+#TODO - adjust this to take FSItem as input, then can check type without incurring
+#       overhead
+#       syncfile already expects FSItem, so pylut already depends on fsitem
 def getstripeinfo( path ):
     """ get lustre stripe information for path
         INPUT: path to file or dir
         OUTPUT: LustreStripeInfo instance
+        NOTE: file type is NOT checked, ie: if called on a pipe i/o will block,
+        if called on a socket or softlink an error will be thrown
     """
-    isdir = False
     cmd = [ env[ 'PYLUTLFSPATH' ], 'getstripe' ]
     opts = None
     args = [ path ]
-    if os.path.isdir( path ):
-        isdir = True
-        args.insert( 0, '-d' )
+#    if os.path.isdir( path ):
+#        args.insert( 0, '-d' )
     ( output, errput ) = runcmd( cmd, opts, args )
     return LustreStripeInfo.from_lfs_getstripe( output.splitlines() )
         
 
+#TODO - adjust this to take FSItem as input, then can check type without incurring
+#       overhead
+#       syncfile already expects FSItem, so pylut already depends on fsitem
 def setstripeinfo( path, count=None, size=None, offset=None ):
     """ set lustre stripe info for path
-        returns None
+        path must be either an existing directory or non-existing file
+        For efficiency reasons, no checks are done (it is assumed that the 
+        calling code already has "stat" information and will perform any necessary
+        checks).
+        If path is an existing socket or link, an error will be thrown
+        If path is an existing fifo, i/o will block (forever?)
+        Output: (no return value)
     """
     cmd = [ env[ 'PYLUTLFSPATH' ], 'setstripe' ]
     opts = None
@@ -255,7 +269,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
         raise UserWarning( 'Default tmpbase not yet implemented' )
     # Construct full path to tmpfile: base + <5-char hex value> + <INODE>
     try:
-        srcfid = src_path.ino
+        srcfid = src_path.inode()
     except ( Run_Cmd_Error ) as e:
         raise SyncError( reason=e.reason, origin=e )
     tmpdir = _pathjoin( tmpbase, hex( hash( srcfid ) )[-5:] )
@@ -296,7 +310,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
             src_path, tgt_path, syncopts )
     if tmp_exists and tgt_exists:
         log.debug( 'tmp and tgt exist' )
-        tgt_tmp_are_same_file = tmp_path.ino == tgt_path.ino
+        tgt_tmp_are_same_file = tmp_path.inode() == tgt_path.inode()
         if tgt_tmp_are_same_file:
             log.debug( 'tmp and tgt are same file' )
             if tmp_data_ok:
@@ -446,7 +460,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
         # Do the rsync
         cmd = [ env[ 'PYLUTRSYNCPATH' ] ]
         opts = { '--compress-level': 0 }
-        args = [ '-l', '-A', '-X', '--super', '--inplace', '--special' ]
+        args = [ '-l', '-A', '-X', '--super', '--inplace', '--specials' ]
         if synctimes:
             args.append( '-t' )
         if syncperms:
@@ -563,8 +577,9 @@ def _compare_files( file1, file2, syncopts ):
     Meta_ok is True iff relevant parts of syncopts match, False otherwise
     Result is undefined if one or both files don't exist
     """
-#    #          0       1              2             3        4      5      6
-#    attrs = ( 'size', 'stripecount', 'stripesize', 'mtime', 'uid', 'gid', 'mode', )
+#TODO - replace mtime with ctime
+    #                0       1              2             3        4      5      6
+    #attr_order = ( 'size', 'stripecount', 'stripesize', 'mtime', 'uid', 'gid', 'mode', )
     attr_match_results = file1.compare( file2, attr_order )
     matches = Attr_Matches( *attr_match_results )
     log.debug( 'Match results: {0}'.format( matches ) )
@@ -575,8 +590,8 @@ def _compare_files( file1, file2, syncopts ):
     affected_attr_list = [ x and not y for x,y in zip( mask, matches ) ]
     # special case: if synctimes not requested, check for file1 newer than file2
     if not syncopts[ 'synctimes' ]:
-        if file1.mtime > file2.mtime:
-            log.debug( 'file1 has a newer mtime' )
+        if file1.ctime > file2.ctime:
+            log.debug( 'file1 has a newer ctime' )
             affected_attr_list[ 3 ] = True
     attrs_affected = Attr_Matches( *affected_attr_list )
     # data is ok only if no updates needed for any of first four attrs

@@ -28,7 +28,6 @@ class FSItem( object ):
         self.mountpoint = mountpoint
         self._inode      = None     #filesystem specific (Lustre==FID)
         self._statinfo   = None     #os.lstat
-        self._stripeinfo = None     #pylut.getstripeinfo
         self._checksum   = None     #hashlib.md5().hexdigest
         if self.absname is None:
             self.absname = os.path.abspath( path )
@@ -50,6 +49,11 @@ class FSItem( object ):
 
 
     def inode( self ):
+        """
+        Attempt to get a filesystem specific version of file identifier
+        (for example: Lustre FID)
+        For normal inode, just use self.ino, which is part of stat and should be faster anyway
+        """
         #TODO-call inode() method of appropriate module for type of filesystem
         if self._inode is None:
             self._inode = pylut.inode( self.absname )
@@ -70,17 +74,28 @@ class FSItem( object ):
         return self._statinfo
 
 
-    #TODO-this should not be here, or at least needs to be monkeypatched in only when running on a filesystem that supports it (such as Lustre)
+    #TODO-stripeinfo is Lustre-specific, probably could monkeypatch it in from pylut
     def stripeinfo( self ):
         """
         Return stripe information, getting it if needed
+        Lustre stripe is valid only for dirs and regular files
+        None will be returned for non-regular files
         """
-        if self._stripeinfo is None:
-            self._stripeinfo = pylut.getstripeinfo( self.absname )
+        try:
+            rv = self._stripeinfo
+        except AttributeError:
+            if self.is_regular() or self.is_dir():
+                self._stripeinfo = pylut.getstripeinfo( self.absname )
+            else:
+                self._stripeinfo = pylut.LustreStripeInfo()
         return self._stripeinfo
 
 
     def checksum( self ):
+        """
+        Return checksum of regular file, calculating it first if needed
+        Return string of zeros for dirs and non-regular files
+        """
         if self._checksum is None:
             if self.exists():
                 if self.is_regular():
@@ -160,9 +175,13 @@ class FSItem( object ):
             (stripeinfo, statinfo, inode, checksum)
         """
         self._statinfo = None
-        self._stripeinfo = None
         self._inode = None
         self._checksum = None
+        #TODO-stripeinfo is Lustre-specific, probably could monkeypatch it in from pylut
+        try:
+            del self._stripeinfo
+        except ( AttributeError ):
+            pass
 
 
     def __getattr__( self, name ):
@@ -170,6 +189,7 @@ class FSItem( object ):
         if name in self.statinfo_keys:
             return self.stat()[ name ]
         # allow easy stripeinfo lookup
+        #TODO-stripeinfo is Lustre-specific, probably could monkeypatch it in from pylut
         if name.startswith( 'stripe' ):
             return getattr( self.stripeinfo(), name[6:] )
         raise AttributeError('{0} not found in {1}'.format( 
