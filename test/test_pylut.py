@@ -146,11 +146,14 @@ def _files_match( f1, f2, incoming_syncopts ):
     # check stripecount and size
     if f1.stripecount != f2.stripecount:
         rv = False
+        print( 'stripecount mismatch' )
     if f1.stripesize != f2.stripesize:
         rv = False
+        print( 'stripesize mismatch' )
     # verify checksums
     if f1.checksum() != f2.checksum():
         rv = False
+        print( 'checksum mismatch' )
     return rv
 
 
@@ -351,7 +354,7 @@ def test_syncfile_04( testdir ):
         tgt = fsitem.FSItem( src.absname.replace( testdir.source, testdir.target ) )
         # make initial sync so tgt exists, don't keep tmpfile
         syncopts.update( keeptmp=False )
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
         # save original tgt FID
         tgt_fid_orig = tgt.inode()
         tgt.update()
@@ -360,7 +363,7 @@ def test_syncfile_04( testdir ):
         # sync again, keep tmpfile this time
         syncopts.update( keeptmp=True )
 #        starttime = time.time()
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
 #        endtime = time.time()
 #        # check that elapsed time was <1 second
 #        elapsedtime = endtime - starttime
@@ -389,22 +392,25 @@ def test_syncfile_05( testdir ):
         tgt = fsitem.FSItem( src.absname.replace( testdir.source, testdir.target ) )
         # initial sync to create tgt, don't keep tmpfile
         syncopts.update( keeptmp=False )
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
         # verify tmp does not exist
         assert os.path.lexists( str( tmp ) ) == False
-        # change tgt file
-        #TODO - make size the same, might have to insert a 1 second sleep
-        if tgt.is_regular():
-            _mkregfile( tgt, size=tgt.size+16 )
-        else:
-            _touch( tgt )
         # save current tgt FID
-        tgt.update()
         tgt_fid_orig = tgt.inode()
+        # change src file
+        if src.is_regular():
+            # sleep is long, faster to just change the file data
+            change = random.randint( 1, 1024 )
+            _mkregfile( src, size=src.size + change )
+        else:
+            # no choice but sleep for non-regular files
+            time.sleep( 1 )
+            _touch( src )
+        src.update()
         # sync again, keep tmpfile this time
         # sync should delete old tgt and make a new one
         syncopts.update( keeptmp=True )
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
         # expect tgt is new, so ensure metadata is up to date
         tgt.update()
         # verify src and tgt are in sync
@@ -433,7 +439,7 @@ def test_syncfile_06( testdir ):
         tgt = fsitem.FSItem( src.absname.replace( testdir.source, testdir.target ) )
         # initial sync to create tmp
         syncopts.update( keeptmp=True )
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
         # delete tgt
         os.unlink( str( tgt ) )
         assert os.path.lexists( str( tgt ) ) == False
@@ -443,7 +449,7 @@ def test_syncfile_06( testdir ):
         tmp.update()
         # sync again, should be fast since valid tmp already exists
 #        starttime = time.time()
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
 #        endtime = time.time()
         # verify src and tgt are in sync
         assert _files_match( src, tgt, syncopts )
@@ -474,21 +480,25 @@ def test_syncfile_07( testdir ):
         tgt = fsitem.FSItem( src.absname.replace( testdir.source, testdir.target ) )
         # initial sync to create tmp
         syncopts.update( keeptmp=True )
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
         # delete tgt
         os.unlink( str( tgt ) )
         assert os.path.lexists( str( tgt ) ) == False
         tgt.update()
-        # change tmp file
-        if tmp.is_regular():
-            _mkregfile( tmp, size=tmp.size )
-        else:
-            _touch( tmp )
         # save current tmp FID
-        tmp.update()
         tmp_fid_orig = tmp.inode()
+        # change src file
+        if src.is_regular():
+            # sleep is long, faster to just change the file data
+            change = random.randint( 1, 1024 )
+            _mkregfile( src, size=src.size + change )
+        else:
+            # no choice but sleep for non-regular files
+            time.sleep( 1 )
+            _touch( src )
+        src.update()
         # sync again, expect a new tmp file
-        tmp, action, attrs = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
+        tmp, action = pylut.syncfile( src_path=src, tgt_path=tgt, **syncopts )
         # expect tmp is new, so ensure metadata is up to date
         tmp.update()
         # verify src and tgt are in sync
@@ -497,31 +507,6 @@ def test_syncfile_07( testdir ):
         assert _files_equal( tgt, tmp )
         # verify tmp has different FID
         assert tmp_fid_orig != tmp.inode()
-
-
-#    def test_syncfile_07( self ):
-#        syncopts = self.syncopts_defaults.copy()
-#        for d in self._iter_valid_files():
-#            src = fsitem.FSItem( d[ 'srcpath' ] )
-#            tgt = fsitem.FSItem( d[ 'tgtpath' ] )
-#            syncopts.update( tmpbase=d[ 'tmpbase' ] )
-#            # do initial sync to get tmppath
-#            tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
-#            # save tmp FID
-#            tmp_fid_1 = tmp.inode()
-#            # remove tgt file
-#            os.unlink( str( tgt ) )
-#            self.assertFalse( os.path.exists( str( tgt ) ) )
-#            tgt.update()
-#            # change data (and mtime) of tmpfile
-#            self.mkfile( tmp )
-#            # syncfile should delete old tmp and make a new one
-#            tmp, action, attrs = pylut.syncfile( src, tgt, **syncopts )
-#            # all the usual checks
-#            self._assert_files_match( src, tgt, syncopts )
-#            self._assert_files_equal( tgt, tmp )
-#            # check tmp has different FID
-#            self.assertNotEqual( tmp_fid_1, tmp.inode() )
 
 
 

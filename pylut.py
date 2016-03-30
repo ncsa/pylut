@@ -14,13 +14,6 @@ for k in [ 'PYLUTRSYNCPATH', 'PYLUTLFSPATH', 'PYLUTRSYNCMAXSIZE' ]:
     env[ k ] = os.environ[ k ]
         
 
-# Encapsulation objects, for function return values
-#               0       1              2             3        4      5      6
-#TODO - replace mtime with ctime
-attr_order = ( 'size', 'stripecount', 'stripesize', 'mtime', 'uid', 'gid', 'mode', )
-Attr_Matches = collections.namedtuple( 'Attr_Matches', attr_order )
-
-
 class LustreStripeInfo( object ):
     """
     class LustreStripeInfo( object )
@@ -103,17 +96,6 @@ class LustreStripeInfo( object ):
         log.debug( 'count={0} size={1} offset={2}'.format(
             retval.count, retval.size, retval.offset ) )
         return retval
-
-# $> lfs getstripe -d /u/staff/aloftus
-# stripe_count:   1 stripe_size:    1048576 stripe_offset:  -1
-# $> lfs getstripe /u/staff/aloftus/junk
-# /u/staff/aloftus/junk
-# lmm_stripe_count:   1 # lmm_stripe_size:    1048576
-# lmm_pattern:        1
-# lmm_layout_gen:     0
-# lmm_stripe_offset:  106
-#         obdidx           objid           objid           group
-#            106        20779670      0x13d1296                0
 
 
     def as_dict( self, *names ):
@@ -216,30 +198,32 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
     """
     Lustre stripe aware file sync
     Copies a file to temporary location, then creates a hardlink for the target.
-    If either the tmp or the target file already exist, it will be checked for
-    accuracy by checking size and mtime (and checksums if pre_checksum=True). If 
-    synctimes=False, tgt is assumed to be equal if tgt_mtime >= src_mtime; 
-    otherwise, if syntimes=True, tgt_mtime must be exactly equal to src_mtime or tgt
-    will be assumed to be out of sync.
-    If a valid tmp or tgt exist and one or more of synctimes, syncperms, syncowner,
-    syncgroup are specified, the specified metadata attributes of tmp and/or tgt 
-    file will be checked and updated.
-    If both tmp and tgt already exist, both will be checked for accuracy against src.
-    If both tmp and tgt are valid (accurate matches), nothing happens.
+    If either the tmp or the target file already exist, that existing file will
+    be checked for accuracy by checking size and mtime (and checksums if
+    pre_checksum=True). If synctimes=False, tgt is assumed to be equal if
+    tgt_mtime >= src_mtime; otherwise, if syntimes=True, tgt_mtime must be
+    exactly equal to src_mtime or tgt will be assumed to be out of sync.  If
+    a valid tmp or tgt exist and one or more of synctimes, syncperms,
+    syncowner, syncgroup are specified, the specified metadata attributes of
+    tmp and/or tgt file will be checked and updated.
+    If both tmp and tgt already exist, both will be checked for accuracy
+    against src.  If both tmp and tgt are valid (accurate matches), nothing
+    happens.
     If at least one of tmp or tgt are found to exist and be valid, the invalid 
     file will be removed and a hardlink created to point to the valid file, thus
     avoiding a full file copy.
     If keeptmp=False, the tmp file hardlink will be removed.
-    When copying a file with multiple hard links, set keeptmp=True
-    to keep the tempfile around so the other hard links will not result in
-    additional file copies.  It is up to the user of this function to remove the tmp
-    files at a later time.
-    The tmpbase parameter cannot be None (this requirement may be removed in a
-    future version).  tmpbase will be created if necessary.  The tmpbase directory
-    structure will not be removed and therefore must be cleaned up manually.
+    When copying a file with multiple hard links, set keeptmp=True to keep the
+    tempfile around so the other hard links will not result in additional file
+    copies.  It is up to the user of this function to remove the tmp files at
+    a later time.
+    The tmpbase parameter cannot be None (this requirement may be removed in
+    a future version).  tmpbase will be created if necessary.  The tmpbase
+    directory structure will not be removed and therefore must be cleaned up
+    manually.
     If post_checksums=True (default), the checksums for src and tgt should be
-    immediately available on the same parameters that were passed in 
-    (ie: src_path.checksum() and tgt_path.checksum() )
+    immediately available on the same parameters that were passed in (ie:
+    src_path.checksum() and tgt_path.checksum() )
     :param src_path FSItem:
     :param tgt_path FSItem:
     :param tmpbase    str: absolute path to directory where tmp files will be created
@@ -253,13 +237,11 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
     :param post_checksums bool: if source was copied to target, compare checksums 
                                 to verify target was written correctly 
                                 (default=True)
-    :return three-tuple: 
+    :return two-tuple: 
         1. fsitem.FSItem: full path to tmpfile (even if keeptmp=False)
         2. action_taken: dict with keys of 'data_copy' and 'meta_update' and values
             of True or False depending on the action taken
-        3. attrs_affected: namedtuple with boolean values indicating if the file
-            attribute in that position was updated or not.  Indices are:
-            ( 'size', 'stripecount', 'stripesize', 'mtime', 'uid', 'gid', 'mode' )
+        2. sync_results: output from rsync --itemize-changes
     """
     if tmpbase is None:
         #TODO - If tmpbase is None, create one at the mountpoint
@@ -288,7 +270,6 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
     hardlink_tgt = None
     do_checksums = False
     sync_action = { 'data_copy': False, 'meta_update': False }
-    #attrs_affected = None
     syncopts = { 'synctimes': synctimes,
                  'syncperms': syncperms,
                  'syncowner': syncowner,
@@ -301,22 +282,19 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
     tmp_exists = tmp_path.exists()
     if tmp_exists:
         log.debug( 'tmp exists, comparing tmp to src' )
-        tmp_data_ok, tmp_meta_ok, tmp_attrs_affected = _compare_files( 
-            src_path, tmp_path, syncopts )
+        tmp_data_ok, tmp_meta_ok = _compare_files( src_path, tmp_path, syncopts )
     tgt_exists = tgt_path.exists()
     if tgt_exists:
         log.debug( 'tgt exists, comparing tgt to src' )
-        tgt_data_ok, tgt_meta_ok, tgt_attrs_affected = _compare_files( 
-            src_path, tgt_path, syncopts )
+        tgt_data_ok, tgt_meta_ok = _compare_files( src_path, tgt_path, syncopts )
     if tmp_exists and tgt_exists:
         log.debug( 'tmp and tgt exist' )
-        tgt_tmp_are_same_file = tmp_path.inode() == tgt_path.inode()
-        if tgt_tmp_are_same_file:
+        if tmp_path.inode() == tgt_path.inode():
             log.debug( 'tmp and tgt are same file' )
             if tmp_data_ok:
-                attrs_affected = tmp_attrs_affected
                 if not tmp_meta_ok:
                     log.debug( 'tmp needs metadata update' )
+                    sync_action[ 'meta_update' ] = True
                     do_rsync = True
                     rsync_src = src_path
                     rsync_tgt = tmp_path
@@ -355,12 +333,12 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
             log.debug( 'tmp exists, tgt doesnt' )
             if tmp_data_ok:
                 log.debug( 'tmp data ok, tgt needs hardlink' )
-                attrs_affected = tmp_attrs_affected
                 do_hardlink = True
                 hardlink_src = tmp_path
                 hardlink_tgt = tgt_path
                 if not tmp_meta_ok:
                     log.debug( 'tmp needs meta update' )
+                    sync_action[ 'meta_update' ] = True
                     do_rsync = True
                     rsync_src = src_path
                     rsync_tgt = tmp_path
@@ -373,7 +351,6 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
             log.debug( 'tgt exists, tmp doesnt' )
             if tgt_data_ok:
                 log.debug( 'tgt data ok' )
-                attrs_affected = tgt_attrs_affected
                 if keeptmp:
                     log.debug( 'keeptmp=True, tmp needs hardlink' )
                     do_mktmpdir = True
@@ -384,6 +361,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
                     log.debug( 'keeptmp=False, no action needed' )
                 if not tgt_meta_ok:
                     log.debug( 'tgt needs metadata update' )
+                    sync_action[ 'meta_update' ] = True
                     do_rsync = True
                     rsync_src = src_path
                     rsync_tgt = tgt_path
@@ -394,8 +372,8 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
                 tgt_exists, tgt_data_ok, tgt_meta_ok = ( False, ) * 3
     if not ( tmp_exists or tgt_exists ):
         log.debug( 'neither tmp nor tgt exist' )
-        attrs_affected = Attr_Matches( True, True, True, 
-            synctimes, syncowner, syncgroup, syncperms )
+        sync_action.update( data_copy   = True,
+                            meta_update = True )
         if src_path.is_regular():
             do_setstripe = True
             setstripe_stripeinfo = src_path.stripeinfo()
@@ -431,7 +409,6 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
     if do_setstripe:
         # Set stripe to create the new file with the expected stripe information
         log.debug( 'setstripe (create) {0}'.format( setstripe_tgt ) )
-        sync_action[ 'data_copy' ] = True
         try:
             setstripeinfo( setstripe_tgt,
                            count=setstripe_stripeinfo.count,
@@ -456,7 +433,6 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
                 raise UserWarning( "errors during dd of '{0}' -> '{1}': output='{2}' errors='{3}'".format( 
                     rsync_src, rsync_tgt, output, errput ) )
     if do_rsync:
-        sync_action[ 'meta_update' ] = True
         # Do the rsync
         cmd = [ env[ 'PYLUTRSYNCPATH' ] ]
         opts = { '--compress-level': 0 }
@@ -514,7 +490,7 @@ def syncfile( src_path, tgt_path, tmpbase=None, keeptmp=False,
                      'src_checksum={sc}, tgt_checksum={tc}'.format(
                         sf=src_path, tf=tgt_path, sc=src_checksum, tc=tgt_checksum )
             raise SyncError( reason, origin )
-    return ( tmp_path, sync_action, attrs_affected )
+    return ( tmp_path, sync_action )
 
 
 def rmdir( path ):
@@ -553,70 +529,56 @@ def syncdir( src_path, tgt_path,
     return runcmd( cmd, opts, args )
 
 
-def _compare_files( file1, file2, syncopts ):
+def _compare_files( f1, f2, syncopts ):
     """
-    Compare attributes of file2 to file1
-    Return tuple of ( data_ok, meta_ok, attrs_affected ), where
+    Compare attributes of f2 to f1 (f1 akin to src, f2 akin to tgt)
+    Return tuple of ( data_ok, meta_ok ), where
         data_ok: boolean - True iff size, stripecount, stripesize
                  ( and pre_checksums if specified) all match between both 
                  files; False otherwise
         meta_ok: boolean - True iff remaining attrs, which are specified in 
                  syncopts, match between files; False otherwise
-        attrs_affected: Attr_Matches - Each position in the namedtuple represents a 
-                        file attribute; the values are booleans where True indicates
-                        that specific file attribute on file2 will be updated 
-                        on a sync.  
-                        This is different than simply indicating which attributes
-                        did or didn't match, because it takes into account the 
-                        specific syncronization options that were given (ie: if
-                        syncuser wasn't specified in syncopts, then even if uid's 
-                        differ, the value in position 4 (uid) will be False because 
-                        uid requested for sync).
-    Also, if synctimes is specified, mtimes must match; otherwise, if file1 is 
-    newer than file2, reports data_ok=False
+    Also, if synctimes is specified, mtimes must match; otherwise, if f1 is 
+    newer than f2, reports data_ok=False
     Meta_ok is True iff relevant parts of syncopts match, False otherwise
     Result is undefined if one or both files don't exist
     """
-#TODO - replace mtime with ctime
-    #                0       1              2             3        4      5      6
-    #attr_order = ( 'size', 'stripecount', 'stripesize', 'mtime', 'uid', 'gid', 'mode', )
-    attr_match_results = file1.compare( file2, attr_order )
-    matches = Attr_Matches( *attr_match_results )
-    log.debug( 'Match results: {0}'.format( matches ) )
-    # mask filters out attributes to be ignored
-    mask = [ True, True, True ]
-    for k in ( 'synctimes', 'syncowner', 'syncgroup', 'syncperms', ):
-        mask.append( syncopts[ k ] )
-    affected_attr_list = [ x and not y for x,y in zip( mask, matches ) ]
-    # special case: if synctimes not requested, check for file1 newer than file2
-    if not syncopts[ 'synctimes' ]:
-        if file1.ctime > file2.ctime:
-            log.debug( 'file1 has a newer ctime' )
-            affected_attr_list[ 3 ] = True
-    attrs_affected = Attr_Matches( *affected_attr_list )
-    # data is ok only if no updates needed for any of first four attrs
-    data_ok = attrs_affected[:4] == ( False, False, False, False, )
-    # meta data is okay if none of the remaining attrs need updates
-    meta_ok = attrs_affected[4:] == ( False, False, False, )
-    if data_ok:
-        # don't need to compare checksums if a previous test already failed
-        if syncopts[ 'pre_checksums' ]:
-            log.debug( 'Comparing checksums...' )
-            if file1.checksum() != file2.checksum():
-                data_ok = False
-                log.debug( 'Checksum mismatch' )
-    return ( data_ok, meta_ok, attrs_affected )
-
+    data_ok = True
+    meta_ok = True
+    # Fast check, if f1.ctime older, nothing to do
+    if f2.ctime > f1.ctime:
+        return( data_ok, meta_ok )
+    # Check for data changes
+    if f1.size != f2.size:
+        data_ok = False
+    elif syncopts[ 'synctimes' ] and f1.mtime != f2.mtime:
+        data_ok = False
+    elif f1.mtime > f2.mtime:
+        data_ok = False
+    elif syncopts[ 'pre_checksums' ] and f1.checksum() != f2.checksum():
+        data_ok = False
+    if data_ok == True:
+        # Check for metadata changes
+        if syncopts[ 'syncowner' ]:
+            if f1.uid != f2.uid:
+                meta_ok = False
+        elif syncopts[ 'syncgroup' ]:
+            if f1.gid != f2.gid:
+                meta_ok = False
+        elif syncopts[ 'synctimes' ] and f1.atime != f2.atime:
+            meta_ok = False
+    else:
+        # data_ok is False, so set meta_ok False as well
+        meta_ok = False
+    # Lustre stripe info can't change for an existing file, so no need to check it
+    return( data_ok, meta_ok )
+        
 
 def _pathjoin( *args ):
     """
     Same as os.path.join but implicitly strip leading pathsep chars
     from all but first element.
     """
-#    log.debug( 'args:{0}'.format( args ) )
-#    head = args[0]
-#    tail = [ x.lstrip( os.sep ) for x in args[1:] ]
-#    log.debug( 'head:{0} tail:{1}'.format( head, tail ) )
     return os.path.join( 
         args[0],
         *[ x.lstrip( os.sep ) for x in args[1:] ]
