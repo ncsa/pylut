@@ -18,15 +18,6 @@ import logging
 import pprint
 #import posix1e
 
-objects = {}
-files = []
-directories = []
-source = psconfig.SOURCE_DIR
-target = psconfig.DEST_DIR
-tmpdir = psconfig.TMP_DIR
-uids = [pwd.getpwnam(user).pw_uid for user in psconfig.PERMS_USERS]
-gids = [grp.getgrnam(group).gr_gid for group in psconfig.PERMS_GROUPS]
-
 class FileObject( object ):
     def __init__( self, path, typ, tgt ):
         self.path = path
@@ -75,12 +66,16 @@ def weighted_picks(sequence, relative_odds):
 
 
 def rand_newfilepath():
-    chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    filepath = ''
     dir = random.choice( directories ).path
-    filepath = os.path.join(dir, ''.join(random.sample(chars, random.randint(1,10))))
-
-    return filepath if not os.path.exists(filepath) \
-                else rand_newfilepath()
+    chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    while len( filepath ) < 1:
+        name = ''.join(random.sample( chars, random.randint(1,10) ) )
+        filepath = os.path.join( dir, name )
+        if os.path.lexists( filepath ):
+            filepath = ''
+    logging.debug( filepath )
+    return ( dir, name, filepath )
 
 
 def rand_path():
@@ -90,8 +85,8 @@ def rand_path():
 
 
 def set_rand_stripeinfo( path ):
-    cnt = random.choice( psconfig.FILE_STRIPE_COUNTS )
-    sz = random.choice( psconfig.FILE_STRIPE_SIZES )
+    cnt = random.choice( config.FILE_STRIPE_COUNTS )
+    sz = random.choice( config.FILE_STRIPE_SIZES )
     cmd = [ 'lfs', 'setstripe' ]
     opts = None
     args = [ '-c', cnt, '-S', sz, path ]
@@ -109,42 +104,48 @@ def save_path_info( path, typ, tgt=None ):
 
 
 def create_directory():
-    path = rand_newfilepath()
+    (parent, fn, path) = rand_newfilepath()
     os.makedirs( path )
     d = save_path_info( path, 'd' )
     directories.append( d )
+    #TODO - uncomment for set stripe info
     ( cnt, sz ) = set_rand_stripeinfo( path )
     d.set_stripe_info( cnt, sz )
 
 
 def create_file():
-    path = rand_newfilepath()
+    (parent, fn, path) = rand_newfilepath()
+    #TODO - uncomment for set stripe info
     ( stripe_cnt, stripe_sz ) = set_rand_stripeinfo( path )
-    filesize = random.randint(0, psconfig.MAX_FILE_SIZE )
+    filesize = random.randint(0, config.MAX_FILE_SIZE )
     with open( path, 'wb') as f:
         f.write( os.urandom( filesize ) )
     f = save_path_info( path, 'f' )
     files.append( f )
+    #TODO - uncomment for set stripe info
     f.set_stripe_info( stripe_cnt, stripe_sz )
 
 
 def create_fifo():
-    path = rand_newfilepath()
+    (parent, fn, path) = rand_newfilepath()
     os.mkfifo( path )
     f = save_path_info( path, 'p' )
     files.append( f )
 
 
 def create_socket():
-    path = rand_newfilepath()
+    (parent, fn, path) = rand_newfilepath()
+    oldwd = os.getcwd()
+    os.chdir( parent )
     sock = socket.socket( socket.AF_UNIX, socket.SOCK_STREAM )
-    sock.bind( path )
+    sock.bind( fn )
+    os.chdir( oldwd )
     f = save_path_info( path, 's' )
     files.append( f )
 
 
 def create_symlink():
-    path = rand_newfilepath()    
+    (parent, fn, path) = rand_newfilepath()    
     target = rand_path()
     os.symlink( target, path )
     f = save_path_info( path, 'l', tgt=target )
@@ -152,7 +153,7 @@ def create_symlink():
 
 
 def create_hardlink():
-    path = rand_newfilepath()    
+    (parent, fn, path) = rand_newfilepath()    
     target = random.choice( files )
     os.link( target.path, path )
     f = save_path_info( path, target.typ )
@@ -162,9 +163,9 @@ def create_hardlink():
 
 def perms_chmod(path, type):
     if type is 'd':
-        mode = random.choice( psconfig.CHMOD_DIR_CHOICES )
+        mode = random.choice( config.CHMOD_DIR_CHOICES )
     else:
-        mode = random.choice( psconfig.CHMOD_CHOICES )
+        mode = random.choice( config.CHMOD_CHOICES )
     if type is not 'l':
         os.chmod(path, mode)
 
@@ -176,8 +177,8 @@ def perms_chown(path):
 def perms_acl(path,type):
     if type is 'd':
         return
-    acl_users = random.sample( psconfig.PERMS_ACL_USERS, random.randint(0,len(psconfig.PERMS_ACL_USERS)) )
-    acl_groups = random.sample( psconfig.PERMS_ACL_GROUPS, random.randint(0,len(psconfig.PERMS_ACL_GROUPS)) )
+    acl_users = random.sample( config.PERMS_ACL_USERS, random.randint(0,len(config.PERMS_ACL_USERS)) )
+    acl_groups = random.sample( config.PERMS_ACL_GROUPS, random.randint(0,len(config.PERMS_ACL_GROUPS)) )
     ac_u = []
     ac_g = []
     ac = []
@@ -188,7 +189,7 @@ def perms_acl(path,type):
             ac_u.append("u:" + user + ":r" + random.choice(['w','-']) + random.choice(['x','-']))
     
     for group in acl_groups:
-        ac_g.append("g:" + random.choice(psconfig.PERMS_ACL_GROUPS) + ":" + random.choice(['r','-']) + random.choice(['w','-']) + random.choice(['x','-']))
+        ac_g.append("g:" + random.choice(config.PERMS_ACL_GROUPS) + ":" + random.choice(['r','-']) + random.choice(['w','-']) + random.choice(['x','-']))
     if len(ac_u) > 0:
         ac.append(','.join(ac_u))
     if len(ac_g) > 0:
@@ -204,21 +205,22 @@ def perms_acl(path,type):
 
 def initialize():
     global objects, directories
-    os.makedirs( psconfig.SOURCE_DIR )
-    os.makedirs( psconfig.DEST_DIR )
-    directories.append( FileObject( psconfig.SOURCE_DIR, 'd', None ) )
+    os.makedirs( config.SOURCE_DIR )
+    os.makedirs( config.DEST_DIR )
+    directories.append( FileObject( config.SOURCE_DIR, 'd', None ) )
     #force create one file first, otherwise a hardlink or softlink first will fail
     create_file()
-    parts, weights = zip( ( create_file,       psconfig.FILE_WEIGHT     ),
-                          ( create_directory,  psconfig.DIR_WEIGHT      ),
-                          ( create_symlink,    psconfig.SYMLINK_WEIGHT  ),
-                          ( create_fifo,       psconfig.FIFO_WEIGHT     ),
-                          ( create_socket,     psconfig.SOCKET_WEIGHT   ),
-                          ( create_hardlink,   psconfig.HARDLINK_WEIGHT )
+    parts, weights = zip( ( create_file,       config.FILE_WEIGHT     ),
+                          ( create_directory,  config.DIR_WEIGHT      ),
+                          ( create_symlink,    config.SYMLINK_WEIGHT  ),
+                          ( create_fifo,       config.FIFO_WEIGHT     ),
+                          ( create_socket,     config.SOCKET_WEIGHT   ),
+                          ( create_hardlink,   config.HARDLINK_WEIGHT )
                         )
     rand_choice = weighted_picks( parts, weights )
-    for i in range( psconfig.NUM_OBJECTS - 1 ):
+    for i in range( config.NUM_OBJECTS - 1 ):
         create = next( rand_choice )
+        logging.debug( 'About to: {0}'.format( create ) )
         create()
     #chmod
     for inode, elems in objects.iteritems():
@@ -234,8 +236,8 @@ def mk_all_tgtdirs():
     global objects, files, directories
     for d in directories:
         try:
-            tgtpath = d.path.replace( source, target, 1 )
-            logging.debug( "Attempting to mkdir '{0}'".format( tgtpath ) )
+            tgtpath = d.path.replace( config.SOURCE_DIR, config.DEST_DIR, 1 )
+            #logging.debug( "Attempting to mkdir '{0}'".format( tgtpath ) )
             os.makedirs( tgtpath )
         except ( OSError ) as e:
             if e.errno == 17:
@@ -244,12 +246,17 @@ def mk_all_tgtdirs():
                 raise e
 
 
+def reset_config():
+    global config
+    config = CFG()
+
+
 def reset():
     global objects, files, directories
     objects = {}
     files = []
     directories = []
-    for d in [ source, target, tmpdir ]:
+    for d in [ config.SOURCE_DIR, config.DEST_DIR, config.TMP_DIR ]:
         try:
             shutil.rmtree( d )
         except ( OSError ) as e:
@@ -259,10 +266,22 @@ def reset():
                 raise e
     initialize()
     
+# make it possible to have a copy of psconfig variables accessible by name
+CFG = type( 'CFG', 
+            (object,), 
+            {k:getattr(psconfig,k) for k in dir(psconfig) if not k.startswith('__')} )
+config = CFG()
+
+objects = {}
+files = []
+directories = []
+uids = [pwd.getpwnam(user).pw_uid for user in config.PERMS_USERS]
+gids = [grp.getgrnam(group).gr_gid for group in config.PERMS_GROUPS]
+
 
 if __name__ == '__main__':
     logging.basicConfig( level=logging.DEBUG )
-#    random.seed( a=psconfig.SEED )
+#    random.seed( a=config.SEED )
         
     reset()
     for inode,elems in objects.iteritems():
