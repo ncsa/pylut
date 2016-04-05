@@ -1,10 +1,9 @@
-# pylut
-Python Lustre Tools
+# pylut - Python Lustre Tools
 
 A collection of functions to simplify interaction with the
 Lustre filesystem from Python.
 
-NOTES:
+## NOTES
 + The following environment variables are expected to be set:
   - PYLUTRSYNCPATH    ( path to rsync )
   - PYLUTLFSPATH      ( path to lfs )
@@ -12,5 +11,8 @@ NOTES:
                       ( files larger than PYLUTMAXRSYNCSIZE will be copied )
                       ( instead with dd before rsync is invoked            )
 
-+ To run the Python tests, the 'testbases' dictionary elements must be updated
-  with the local file system mountpoint(s) and test paths.
+## Running tests
+To run the Python tests:
++ cd /path/to/pylut
++ vi test/runtest (set environment variables, per above, as needed)
++ test/runtest
