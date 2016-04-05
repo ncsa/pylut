@@ -164,7 +164,11 @@ def getstripeinfo( path ):
 #    if os.path.isdir( path ):
 #        args.insert( 0, '-d' )
     ( output, errput ) = runcmd( cmd, opts, args )
-    return LustreStripeInfo.from_lfs_getstripe( output.splitlines() )
+    if True in [ 'has no stripe info' in x for x in (output, errput) ]:
+        sinfo = LustreStripeInfo()
+    else:
+        sinfo = LustreStripeInfo.from_lfs_getstripe( output.splitlines() )
+    return sinfo
         
 
 #TODO - adjust this to take FSItem as input, then can check type without incurring
