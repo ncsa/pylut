@@ -1,6 +1,6 @@
 SOURCE_DIR = 'tmp/source'
 DEST_DIR = 'tmp/dest'
-TMP_DIR = 'tmp/__TMPDIR__'
+TMP_DIR = 'tmp/tmp'
 NUM_OBJECTS = 100
 MAX_FILE_SIZE = 4*1024
 SEED = 1
