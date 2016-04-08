@@ -64,6 +64,8 @@ class FSItem( object ):
         """
         Return file stat information, getting it if needed
         """
+        #TODO - Lustre has a special (fast) stat call that doesn't touch OSS's.
+        #       Use this one unless size is specifically requested.
         # Store statinfo as a local dict
         if self._statinfo is None:
             st = os.lstat( self.absname )
